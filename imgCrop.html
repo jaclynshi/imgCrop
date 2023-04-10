@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>imgCrop</title>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <button id="upload">截图</button>
+    <canvas id="preview"></canvas>
+    <script>
+        const canvas = document.getElementById("canvas");
+        const preview = document.getElementById("preview");
+        const upload = document.getElementById("upload");
+
+
+        class ImgCrop {
+            constructor(canvasWrap, previewWrap, uploadWrap, imgSrc) {
+                this.canvasWrap = canvasWrap;
+                this.previewWrap = previewWrap;
+                this.uploadWrap = uploadWrap;
+                this.ctx = canvasWrap.getContext("2d");
+                this.previewCtx = previewWrap.getContext("2d");
+                this.imgSrc = imgSrc;
+
+                this.imgLoad();
+
+                // 监听鼠标事件
+                this.canvasWrap.addEventListener("mousemove", this.mouseMoveHandle.bind(this));
+                this.canvasWrap.addEventListener("mousedown", this.mouseDownHandle.bind(this));
+                this.canvasWrap.addEventListener("mouseup", this.mouseUpHandle.bind(this));
+                this.canvasWrap.addEventListener("mouseleave", this.mouseLeave.bind(this));
+                this.uploadWrap.addEventListener("click", this.uploadHandle.bind(this));
+            }
+
+            imgLoad() {
+                const img = new Image();
+                img.src = this.imgSrc;
+                img.onload = () => {
+                    this.sourceWidth = this.canvasWrap.width = img.width;
+                    this.sourceHeight = this.canvasWrap.height = img.height;
+                    this.imgObj = img;
+                    this.x = img.width * 0.25;  // 裁剪区域的x坐标是图片宽度的1/4
+                    this.y = img.height * 0.25; // 裁剪区域的y坐标为图片高度的1/4
+                    this.width = img.width * 0.5;  // 裁剪区域的宽度为图片宽度的1/2
+                    this.height = img.height * 0.5;  // 裁剪区域的高度为图片高度的1/2
+                    this.drawImg();
+                }
+            }
+
+            drawImg() {
+                this.ctx.drawImage(this.imgObj, 0, 0, this.sourceWidth, this.sourceHeight);
+
+                // 绘制蒙层
+                this.ctx.fillStyle = 'rgba(0, 0, 0, .5)';
+                this.ctx.fillRect(0, 0, this.sourceWidth, this.sourceHeight);
+
+                // 绘制裁剪区域
+                this.drawCrop();
+            }
+
+            drawCrop() {
+                this.ctx.clearRect(this.x, this.y, this.width, this.height);
+                this.ctx.drawImage(this.imgObj, this.x, this.y, this.width, this.height, this.x, this.y, this.width, this.height);
+                // 绘制resize标志
+                this.ctx.fillStyle = '#fff';
+                this.ctx.fillRect(this.x + this.width - 3, this.y + this.height - 3, 6, 6);
+            }
+
+            mouseMoveHandle(e) {
+                const { offsetX, offsetY } = e;
+                let moveX = offsetX - this.downOffset?.[0];
+                let moveY = offsetY - this.downOffset?.[1];
+
+                // 鼠标移动逻辑
+                if (offsetX >= this.x && offsetX <= (this.x + this.width - 10) &&
+                    offsetY >= this.y && offsetY <= (this.y + this.height - 10)) {
+                    this.canvasWrap.style.cursor = "move";
+                    if (this.isDown) {
+                        if (moveX > 0 && this.x + moveX <= this.sourceWidth - this.width) this.x += moveX;
+                        if (moveY > 0 && this.y + moveY <= this.sourceWidth - this.width) this.y += moveY;
+                        if (moveX < 0 && this.x + moveX >= 0) this.x += moveX;
+                        if (moveY < 0 && this.y + moveY >= 0) this.y += moveY;
+                        this.drawImg();
+                        this.downOffset = [offsetX, offsetY];
+                    }
+                } else if (offsetX >= (this.x + this.width - 10) && offsetX <= (this.x + this.width + 10) &&
+                    offsetY >= (this.y + this.height - 10) && offsetY <= (this.y + this.height + 10)) {
+                    this.canvasWrap.style.cursor = "nwse-resize";
+                    if (this.isDown) {
+                        if (moveX > 0 && this.x < this.sourceWidth - this.width) this.width += moveX;
+                        if (moveY > 0 && this.y < this.sourceHeight - this.height) this.height += moveY;
+                        if (moveX < 0 && this.width + moveX >= 20) this.width += moveX;
+                        if (moveY < 0 && this.height + moveY >= 20) this.height += moveY;
+                        this.drawImg();
+                        this.downOffset = [offsetX, offsetY];
+                    }
+                } else {
+                    this.canvasWrap.style.cursor = "default";
+                }
+            }
+
+            mouseDownHandle(e) {
+                const { offsetX, offsetY } = e;
+                this.isDown = true;
+                this.downOffset = [offsetX, offsetY];
+            }
+
+            mouseUpHandle(e) {
+                this.isDown = false;
+            }
+
+            mouseLeave() {
+                this.isDown = false;
+            }
+        
+            uploadHandle() {
+                this.previewWrap.width = this.width;
+                this.previewWrap.height = this.height;
+                this.previewCtx.drawImage(this.imgObj, this.x, this.y, this.width, this.height, 0, 0, this.width, this.height);
+
+                // 下载
+                this.download();
+            }
+
+            download() {
+                const url = this.previewWrap.toDataURL("image/png");
+                // 获取文件类型
+                let arr = url.split(",");
+                let mime = arr[0].match(/:(.*?);/)[1];
+                // base64解码
+                let bstr = atob(arr[1]);
+                let n = bstr.length;
+                let u8arr = new Uint8Array(n);
+                while(n--) {
+                    u8arr[n] = bstr.charCodeAt(n);
+                }
+                let file = new File([u8arr], "filename", { type: mime });
+                const aDom = document.createElement("a");
+                aDom.download = file.name;
+                let href = URL.createObjectURL(file);
+                aDom.href = href;
+                document.body.appendChild(aDom);
+                aDom.click();
+                document.body.removeChild(aDom);
+                URL.revokeObjectURL(href);
+            }
+        }
+
+        new ImgCrop(canvas, preview, upload, 'i_love_working.jpeg');
+    </script>
+</body>
+
+</html>
